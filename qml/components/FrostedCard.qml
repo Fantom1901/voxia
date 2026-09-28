@@ -10,7 +10,7 @@ Item {
   property var backgroundTexture: null
   property vector2d backgroundResolution: Qt.vector2d(1, 1)
   property real backgroundScale: 1.0
-  property vector2d backgroundOrigin: Qt.vector2d(0, 0)
+  property vector2d backgroundCenter: Qt.vector2d(0, 0)
 
   implicitWidth: 200
   implicitHeight: 200
@@ -21,9 +21,9 @@ Item {
     visible: card.backgroundTexture !== null
 
     property vector2d u_resolution: card.backgroundResolution
-    property vector2d u_origin:
-      Qt.vector2d(card.backgroundOrigin.x * card.backgroundScale,
-                  card.backgroundOrigin.y * card.backgroundScale)
+    property vector2d u_center:
+      Qt.vector2d(card.backgroundCenter.x * card.backgroundScale,
+                  card.backgroundCenter.y * card.backgroundScale)
     property vector2d u_size:
       Qt.vector2d(width * card.backgroundScale,
                   height * card.backgroundScale)
