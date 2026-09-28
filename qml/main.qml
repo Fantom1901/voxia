@@ -6,7 +6,7 @@ import "components"
 
 PanelWindow {
   id: root
-  WlrLayershell.namespace: "voxia"
+  WlrLayershell.namespace: "liquid-glass"
 
   readonly property bool devMode: false
 
@@ -22,12 +22,33 @@ PanelWindow {
 
   property string currentState: "idle"
   property real audioVolume: 0.0
-
-  visible: devMode || currentState !== "idle"
+  property bool glassVisible: false
 
   Component.onCompleted: {
     if (devMode) {
       currentState = "recording"
+    }
+  }
+
+  onCurrentStateChanged: {
+    if (currentState === "idle") {
+      glassVisible = false
+      glassCaptureTimer.stop()
+    } else if (!glassVisible) {
+      glassCaptureTimer.restart()
+    }
+  }
+
+  Timer {
+    id: glassCaptureTimer
+    interval: 100
+
+    onTriggered: {
+      if (screenCapture.hasContent) {
+        root.glassVisible = true
+      } else {
+        restart()
+      }
     }
   }
 
@@ -88,7 +109,7 @@ PanelWindow {
 
     anchors.fill: parent
     captureSource: root.screen
-    live: root.visible
+    live: !root.glassVisible
   }
 
   ShaderEffectSource {
@@ -99,7 +120,7 @@ PanelWindow {
     sourceRect: Qt.rect(0, 0, root.width, root.height)
     textureSize: screenCapture.sourceSize
     hideSource: true
-    live: root.visible
+    live: !root.glassVisible
     visible: false
   }
 
@@ -109,6 +130,7 @@ PanelWindow {
     anchors.centerIn: parent
     width: 180
     height: 180
+    visible: root.glassVisible
 
     FrostedCard {
       anchors.fill: parent
