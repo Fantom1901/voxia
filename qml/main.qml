@@ -19,6 +19,7 @@ PanelWindow {
   implicitWidth: Screen.width
   implicitHeight: Screen.height
   color: "transparent"
+  visible: devMode || currentState !== "idle" || glassVisible
 
   property string currentState: "idle"
   property real audioVolume: 0.0
@@ -32,10 +33,13 @@ PanelWindow {
 
   onCurrentStateChanged: {
     if (currentState === "idle") {
-      glassVisible = false
       glassCaptureTimer.stop()
+      glassCloseTimer.restart()
     } else if (!glassVisible) {
+      glassCloseTimer.stop()
       glassCaptureTimer.restart()
+    } else {
+      glassCloseTimer.stop()
     }
   }
 
@@ -48,6 +52,17 @@ PanelWindow {
         root.glassVisible = true
       } else {
         restart()
+      }
+    }
+  }
+
+  Timer {
+    id: glassCloseTimer
+    interval: 260
+
+    onTriggered: {
+      if (root.currentState === "idle") {
+        root.glassVisible = false
       }
     }
   }
@@ -131,6 +146,24 @@ PanelWindow {
     width: 180
     height: 180
     visible: root.glassVisible
+    opacity: root.currentState === "idle" || !root.glassVisible ? 0.0 : 1.0
+    scale: root.currentState === "idle" || !root.glassVisible ? 0.72 : 1.0
+    transformOrigin: Item.Center
+
+    Behavior on opacity {
+      NumberAnimation {
+        duration: 220
+        easing.type: Easing.OutCubic
+      }
+    }
+
+    Behavior on scale {
+      NumberAnimation {
+        duration: 260
+        easing.type: Easing.OutBack
+        easing.overshoot: 1.15
+      }
+    }
 
     FrostedCard {
       anchors.fill: parent

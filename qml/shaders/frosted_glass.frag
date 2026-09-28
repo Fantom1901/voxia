@@ -83,7 +83,6 @@ void main()
         discard;
 
     vec2 screenUV = screenPixels / max(u_resolution, vec2(1.0));
-    screenUV.y = 1.0 - screenUV.y;
     float r = clamp(length(local), 0.0, 1.0);
 
     vec2 domeSlope = normalize(local + vec2(0.0001)) * pow(r, 1.0);
@@ -91,7 +90,7 @@ void main()
     vec3 domeNormal = normalize(vec3(-domeSlope * 0.7, 1.0));
     vec2 domeRefraction = refract(incident, domeNormal, 1.0 / 1.5).xy;
     vec2 domeUV = screenUV
-                + domeRefraction * 0.03
+                + domeRefraction * 0.55
                 * u_size / max(u_resolution, vec2(1.0));
 
     float falloff = exp(-abs(dist) * 0.4);
@@ -103,12 +102,13 @@ void main()
         1.0 / 1.5
     ).xy;
     vec2 contourUV = screenUV
-                   + contourRefraction * 0.35 * falloff
+                   + contourRefraction * 0.30 * falloff
                    * u_size / max(u_resolution, vec2(1.0));
 
-    float edgeWeight = smoothstep(0.0, 1.0, abs(dist));
-    float radialWeight = smoothstep(0.5, 1.0, r);
-    float blend = clamp(edgeWeight - radialWeight * 0.5, 0.0, 1.0);
+    float edgeBand = min(halfSize.x, halfSize.y) * 0.45;
+    float edgeWeight = 1.0 - smoothstep(0.0, edgeBand, abs(dist));
+    float radialWeight = smoothstep(0.35, 1.0, r);
+    float blend = clamp(edgeWeight + radialWeight * 0.25, 0.0, 1.0);
     vec2 refractUV = mix(domeUV, contourUV, blend);
     refractUV = clamp(refractUV, vec2(0.0), vec2(1.0));
 
