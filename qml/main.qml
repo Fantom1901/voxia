@@ -113,6 +113,7 @@ PanelWindow {
     FrostedCard {
       anchors.fill: parent
       backgroundTexture: desktopTexture
+      backgroundOrigin: card.mapToItem(root, 0, 0)
       backgroundResolution: Qt.vector2d(
         Math.max(screenCapture.sourceSize.width, 1),
         Math.max(screenCapture.sourceSize.height, 1)

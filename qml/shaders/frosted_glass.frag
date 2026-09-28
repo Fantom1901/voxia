@@ -7,7 +7,7 @@ layout (std140, binding = 0) uniform buf {
     mat4 qt_Matrix;
     float qt_Opacity;
     vec2 u_resolution;
-    vec2 u_mouse;
+    vec2 u_origin;
     vec2 u_size;
     float u_dpr;
     float cornerRadius;
@@ -72,7 +72,7 @@ void main()
 {
     vec2 halfSize = max(u_size * 0.5, vec2(1.0));
     vec2 localPixels = qt_TexCoord0 * u_size - halfSize;
-    vec2 screenPixels = u_mouse + localPixels;
+    vec2 screenPixels = u_origin + qt_TexCoord0 * u_size;
     vec2 local = localPixels / halfSize;
     float radius = min(cornerRadius, min(halfSize.x, halfSize.y));
     float dist = roundedBoxSDF(localPixels, halfSize, radius);
