@@ -1,10 +1,12 @@
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import Quickshell.Wayland
 import "components"
 
 PanelWindow {
   id: root
+  WlrLayershell.namespace: "voxia"
 
   readonly property bool devMode: false
 
@@ -14,6 +16,8 @@ PanelWindow {
     left: true
     right: true
   }
+  implicitWidth: Screen.width
+  implicitHeight: Screen.height
   color: "transparent"
 
   property string currentState: "idle"
@@ -79,6 +83,26 @@ PanelWindow {
     }
   }
 
+  ScreencopyView {
+    id: screenCapture
+
+    anchors.fill: parent
+    captureSource: root.screen
+    live: root.visible
+  }
+
+  ShaderEffectSource {
+    id: desktopTexture
+
+    anchors.fill: parent
+    sourceItem: screenCapture
+    sourceRect: Qt.rect(0, 0, root.width, root.height)
+    textureSize: screenCapture.sourceSize
+    hideSource: true
+    live: root.visible
+    visible: false
+  }
+
   Item {
     id: card
 
@@ -88,6 +112,14 @@ PanelWindow {
 
     FrostedCard {
       anchors.fill: parent
+      backgroundTexture: desktopTexture
+      backgroundResolution: Qt.vector2d(
+        Math.max(screenCapture.sourceSize.width, 1),
+        Math.max(screenCapture.sourceSize.height, 1)
+      )
+      backgroundScale: screenCapture.sourceSize.width > 0
+        ? screenCapture.sourceSize.width / Math.max(root.width, 1)
+        : Screen.devicePixelRatio
 
       Orb {
         anchors.fill: parent

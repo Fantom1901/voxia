@@ -6,116 +6,121 @@ layout (location = 0) out vec4 fragColor;
 layout (std140, binding = 0) uniform buf {
     mat4 qt_Matrix;
     float qt_Opacity;
-    vec2 size;
+    vec2 u_resolution;
+    vec2 u_mouse;
+    vec2 u_size;
+    float u_dpr;
     float cornerRadius;
-    float frost;
-    float refraction;
-    float lightAngle;
-    float lightStrength;
 };
 
-layout (binding = 1) uniform sampler2D source;
+layout (binding = 1) uniform sampler2D u_background;
 
-float sdRoundedBox(vec2 p, vec2 b, float r)
+float roundedBoxSDF(vec2 p, vec2 halfSize, float radius)
 {
-    vec2 q = abs(p) - b + vec2(r);
-    return min(max(q.x, q.y), 0.0)
-    + length(max(q, 0.0)) - r;
+    vec2 q = abs(p) - halfSize + radius;
+    return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - radius;
 }
 
-vec3 sampleBlurred(vec2 uv, vec2 pixel)
+vec2 getNormal(vec2 p, vec2 halfSize, float radius)
+{
+    float stepSize = max(u_dpr * 2.0, 1.0);
+    vec2 eps = vec2(stepSize, 0.0);
+    vec2 gradient = vec2(
+        roundedBoxSDF(p + eps.xy, halfSize, radius)
+            - roundedBoxSDF(p - eps.xy, halfSize, radius),
+        roundedBoxSDF(p + eps.yx, halfSize, radius)
+            - roundedBoxSDF(p - eps.yx, halfSize, radius)
+    );
+
+    gradient *= 0.5 / stepSize;
+
+    vec2 diag = vec2(
+        roundedBoxSDF(p + vec2(stepSize), halfSize, radius)
+            - roundedBoxSDF(p - vec2(stepSize), halfSize, radius),
+        roundedBoxSDF(p + vec2(stepSize, -stepSize), halfSize, radius)
+            - roundedBoxSDF(p + vec2(-stepSize, stepSize), halfSize, radius)
+    ) * (0.25 / stepSize);
+
+    gradient = mix(gradient, diag, 0.25);
+    float magnitude = length(gradient);
+    return magnitude > 0.001 ? gradient / magnitude : vec2(0.0);
+}
+
+vec3 blurBackground(vec2 uv)
 {
     vec3 result = vec3(0.0);
+    float total = 0.0;
+    const float sigma = 3.0;
+    vec2 texel = 2.0 / max(u_resolution, vec2(1.0));
 
-    result += texture(source, uv + pixel * vec2(-2.0, -2.0)).rgb;
-    result += texture(source, uv + pixel * vec2(0.0, -2.0)).rgb;
-    result += texture(source, uv + pixel * vec2(2.0, -2.0)).rgb;
-    result += texture(source, uv + pixel * vec2(-2.0, 0.0)).rgb;
-    result += texture(source, uv).rgb;
-    result += texture(source, uv + pixel * vec2(2.0, 0.0)).rgb;
-    result += texture(source, uv + pixel * vec2(-2.0, 2.0)).rgb;
-    result += texture(source, uv + pixel * vec2(0.0, 2.0)).rgb;
-    result += texture(source, uv + pixel * vec2(2.0, 2.0)).rgb;
+    for (int x = -3; x <= 3; ++x) {
+        for (int y = -3; y <= 3; ++y) {
+            vec2 offset = vec2(float(x), float(y));
+            float weight = exp(-dot(offset, offset) / (2.0 * sigma));
+            result += texture(
+                u_background,
+                clamp(uv + offset * texel, vec2(0.0), vec2(1.0))
+            ).rgb * weight;
+            total += weight;
+        }
+    }
 
-    return result / 9.0;
+    return result / max(total, 0.0001);
 }
 
 void main()
 {
-    vec2 safeSize = max(size, vec2(1.0));
-    vec2 pos = qt_TexCoord0 * safeSize;
-    vec2 halfSize = safeSize * 0.5;
-    vec2 p = pos - halfSize;
+    vec2 halfSize = max(u_size * 0.5, vec2(1.0));
+    vec2 localPixels = qt_TexCoord0 * u_size - halfSize;
+    vec2 screenPixels = u_mouse + localPixels;
+    vec2 local = localPixels / halfSize;
+    float radius = min(cornerRadius, min(halfSize.x, halfSize.y));
+    float dist = roundedBoxSDF(localPixels, halfSize, radius);
+    float aa = max(fwidth(dist), 1.0);
+    float coverage = 1.0 - smoothstep(-aa, aa, dist);
 
-    float dist = sdRoundedBox(
-        p,
-        halfSize - vec2(1.0),
-        min(cornerRadius, min(halfSize.x, halfSize.y))
-    );
+    if (coverage <= 0.001)
+        discard;
 
-    float alpha = 1.0 - smoothstep(0.0, 1.5, dist);
+    vec2 screenUV = screenPixels / max(u_resolution, vec2(1.0));
+    float r = clamp(length(local), 0.0, 1.0);
 
-    if (alpha <= 0.001)
-    discard;
+    vec2 domeSlope = normalize(local + vec2(0.0001)) * pow(r, 1.0);
+    vec3 incident = vec3(0.0, 0.0, -1.0);
+    vec3 domeNormal = normalize(vec3(-domeSlope * 0.7, 1.0));
+    vec2 domeRefraction = refract(incident, domeNormal, 1.0 / 1.5).xy;
+    vec2 domeUV = screenUV
+                + domeRefraction * 0.03
+                * u_size / max(u_resolution, vec2(1.0));
 
-    float edgeDistance = abs(dist);
+    float falloff = exp(-abs(dist) * 0.4);
+    vec2 contourNormal = getNormal(localPixels, halfSize, radius);
+    vec3 contourSurface = normalize(vec3(-contourNormal, 1.0));
+    vec2 contourRefraction = refract(
+        incident,
+        contourSurface,
+        1.0 / 1.5
+    ).xy;
+    vec2 contourUV = screenUV
+                   + contourRefraction * 0.35 * falloff
+                   * u_size / max(u_resolution, vec2(1.0));
 
-    // Мягкий внутренний кант
-    float bevel = 1.0 - smoothstep(0.0, 10.0, edgeDistance);
+    float edgeWeight = smoothstep(0.0, 1.0, abs(dist));
+    float radialWeight = smoothstep(0.5, 1.0, r);
+    float blend = clamp(edgeWeight - radialWeight * 0.5, 0.0, 1.0);
+    vec2 refractUV = mix(domeUV, contourUV, blend);
+    refractUV = clamp(refractUV, vec2(0.0), vec2(1.0));
 
-    // Тонкое рассеянное свечение границы
-    float rimLight = 1.0 - smoothstep(0.0, 3.0, edgeDistance);
+    vec3 refracted = texture(u_background, refractUV).rgb;
+    vec3 blurred = blurBackground(refractUV);
+    vec3 base = mix(refracted, blurred, 0.5);
 
-    vec2 normalizedP = p / max(halfSize, vec2(1.0));
-    float distanceFromCenter = length(normalizedP);
+    float edgeFalloff = 1.0 - smoothstep(0.0, 2.0 * u_dpr, abs(dist));
+    float topBand = 1.0 - smoothstep(-1.5, -0.2, local.y);
+    base *= 1.0 - edgeFalloff * topBand * 0.1;
 
-    vec2 lightDir = vec2(cos(lightAngle), sin(lightAngle));
-    vec2 direction = p / max(length(p), 0.001);
-
-    float surfaceGlow = max(dot(direction, lightDir), 0.0);
-    surfaceGlow *= 1.0 - smoothstep(0.15, 1.0, distanceFromCenter);
-
-    float grain = fract(
-        sin(dot(pos, vec2(12.9898, 78.233))) * 43758.5453
-    );
-
-    vec3 glassBase = vec3(0.012, 0.018, 0.040);
-
-    // Тёмное матовое затемнение вместо белого свечения
-    vec3 color = glassBase;
-    color += vec3(0.018, 0.026, 0.060) * clamp(frost / 5.0, 0.0, 1.0);
-
-    color += vec3(0.025, 0.040, 0.090)
-    * rimLight
-    * lightStrength
-    * 0.10;
-
-    color += vec3(0.010, 0.018, 0.045)
-    * surfaceGlow
-    * lightStrength
-    * 0.08;
-
-    color += vec3(grain - 0.5) * 0.004;
-
-    float glassAlpha =
-    (0.72 + bevel * 0.08 + rimLight * 0.04)
-    * alpha
-    * qt_Opacity;
-
-    vec2 uv = qt_TexCoord0;
-    vec2 pixel = 1.0 / safeSize;
-
-    vec3 background = sampleBlurred(uv, pixel);
-
-    // Тёмное матовое затемнение поверх размытого фона.
-    color = background * 0.38;
-    color += vec3(0.008, 0.012, 0.030);
-    color += vec3(grain - 0.5) * 0.006;
-
-    glassAlpha =
-    (0.94 + bevel * 0.04 + rimLight * 0.02)
-    * alpha
-    * qt_Opacity;
-
-    fragColor = vec4(color * glassAlpha, glassAlpha);
+    float edgeGlow = 1.0 - smoothstep(0.0, 3.0 * u_dpr, abs(dist));
+    vec3 color = mix(base, vec3(0.7), edgeGlow * 0.5);
+    float alpha = 0.75 * coverage * qt_Opacity;
+    fragColor = vec4(color * alpha, alpha);
 }
